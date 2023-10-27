@@ -18,16 +18,21 @@ class DataProcessor:
         """
         self.file_path = file_path
         self.excel_file = self.get_mouse_data_from_excel()
-        # 定义工作表中的列名称
-        add_food = "粮食增减"
-        add_food_sum_week = "每周粮食新增数量"
-        subtract_food_week = "每周粮食剩余数量"
-        eat_food = "每周进食情况"
-        moues_weight_record = "体重记录"
+        # 原来的工作表中的列名称
+        self.add_food = "新增粮食"
+        self.subtract_food = "剩余粮食"
+        self.moues_weight_record = "体重记录"
+        self.mouse_kill = "杀鼠表"
+
+        # 新建立的工作表的名称
+        self.add_food_week = "每周新增粮食"
+        self.subtract_food_week = "每周剩余粮食"
+        self.eat_food = "每周进食情况"
 
         # 计算体重变化和每周进食情况
-        weight_change_df = self.Calculate_WD(self.excel_file[f"{moues_weight_record}"])
-        sum_df = self.Calculate_WEH(self.excel_file[f"{add_food}"], add_food=eat_food)
+        weight_change_df = self.Calculate_WD(self.excel_file[f"{self.moues_weight_record}"])
+        self.sum_df = self.Calculate_WEH(self.excel_file[f"{self.add_food}"], add_food=self.add_food_week)
+        self.sum_df_sub = self.Calculate_WEH(self.excel_file[f"{self.subtract_food}"], add_food=self.subtract_food_week)
 
         # 保存结果到 Excel 文件
         self.Save2xlsx(f"{output_file}")
@@ -48,9 +53,45 @@ class DataProcessor:
             df.set_index(df.iloc[:, 0], inplace=True)
             df.drop(df.columns[[0]], axis=1, inplace=True)
             self.excel_file[sheet_name] = df
-        return self.excel_file
+        # 定义文件路径
+        
+        # 保存处理后的数据到相同的文件，覆盖原始文件
+        with pd.ExcelWriter(self.file_path, engine='openpyxl', mode='a', if_sheet_exists='replace') as writer:
+            for sheet_name, df in self.excel_file.items():
+                df.to_excel(writer, sheet_name=sheet_name, index=True)
 
-    def Calculate_WEH(self, weekly_eating_df, add_food="每周投喂剩余食物数量的差值，也就是计算进食数量"):
+        return self.excel_file
+    
+    def make_excel_mouse(self, mouse_number, mouse_cage="unknown", mouse_food="MCD",mouse_description=None):
+        # mouse = self.excel_file[f"{self.moues_weight_record}"].loc[f"{mouse_number}"]
+        mouse = {}
+        mouse_list = [f"{mouse_number}的体重",f"{mouse_number}的体重变化",f"{mouse_cage}的新增粮食",f"{mouse_number}的描述",f"{mouse_cage}的剩余粮食",f"{mouse_cage}的每周进食量"]
+        mouse_weight = self.excel_file[f"{self.moues_weight_record}"][mouse_number]
+        mouse_delta_weight = self.weight_change_df[mouse_number]
+
+        mouse_location = self.file_path
+        if mouse_cage != "unknown":
+            mouse_date_food = self.sum_df[mouse_cage]
+            mouse_date_food_sub = self.sum_df_sub[mouse_cage]
+        if mouse_description :
+            pass
+        else:
+            mouse_description = input(f"这里是小鼠{mouse_number}，位于{mouse_cage}，食物是{mouse_food},现在您正在从表格中初始化小鼠，请问您有什么额外的交代？")  
+
+        mouse["name"] = mouse_number
+        mouse["cage"] = mouse_cage
+        mouse["杀鼠表"] = self.excel_file[self.mouse_kill]
+        
+        mouse[mouse_list[0]] = mouse_weight
+        mouse[mouse_list[1]] = mouse_delta_weight
+        mouse[mouse_list[2]] = mouse_date_food
+        mouse[mouse_list[4]] = mouse_date_food_sub
+        mouse[mouse_list[3]] = f"这里是小鼠{mouse_number}，位于{mouse_cage}，食物是{mouse_food}，数据保存在{self.file_path}\n"+ mouse_description
+        mouse[mouse_list[5]] = mouse_date_food_sub.sub(mouse_date_food,fill_value=0)
+        mouse["location"] = mouse_location
+        return mouse
+
+    def Calculate_WEH(self, weekly_eating_df, add_food="每周投喂食物数量"):
         """
         计算每周进食情况。
 
@@ -67,9 +108,8 @@ class DataProcessor:
             except ValueError:
                 weekly_eating_df.index = pd.to_datetime(weekly_eating_df.index, format='%Y-%m-%d')
         sum_df = weekly_eating_df.resample('7D').sum()
-        self.sum_df = sum_df
         self.excel_file[f"{add_food}"] = sum_df
-        return self.sum_df
+        return sum_df
 
     def Calculate_WD(self, mouse_weigh, mouse_weight_change="每周老鼠体重变化"):
         """
@@ -82,11 +122,11 @@ class DataProcessor:
         Returns:
             DataFrame: 包含每周老鼠体重变化情况的 DataFrame。
         """
-        weight_change_df = mouse_weigh.diff()
-        weight_change_df.iloc[0] = 0
-        self.weight_change = weight_change_df
-        self.excel_file[f"{mouse_weight_change}"] = weight_change_df
-        return weight_change_df
+        self.weight_change_df = mouse_weigh.diff()
+        self.weight_change_df.iloc[0] = 0
+        # self.weight_change = self.weight_change_df
+        self.excel_file[f"{mouse_weight_change}"] = self.weight_change_df
+        return self.weight_change_df
 
     def Save2xlsx(self, save_file="output.xlsx"):
         """
